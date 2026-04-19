@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import { getCountries, getConstituencies, getIssues, deleteIssue, getCurrentUser } from '../services/api';
-import SearchableSelect from './SearchableSelect';
-import { Link, useParams, useNavigate } from 'react-router-dom';
 
 function ConstituencyView() {
   const { constituencyId } = useParams();
-  const navigate = useNavigate(); // Add this line
   const [countries, setCountries] = useState([]);
   const [constituencies, setConstituencies] = useState([]);
   const [selectedCountry, setSelectedCountry] = useState('');
@@ -75,55 +73,45 @@ function ConstituencyView() {
 
   return (
     <div>
-             {/* Country Selector with Search */}
+      {/* Country Selector */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <h2 className="text-xl font-bold mb-4">Select Your Country</h2>
-        <SearchableSelect
-          options={countries}
+        <select
           value={selectedCountry}
-          onChange={(countryId) => {
-            setSelectedCountry(countryId);
-            setConstituencies([]);
-            // Navigate to home (clear constituency selection)
-            navigate('/');
-          }}
-          placeholder="Search or select a country..."
-          label="Country"
-        />
+          onChange={(e) => setSelectedCountry(e.target.value)}
+          className="w-full md:w-64 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Choose a country...</option>
+          {countries.map((country) => (
+            <option key={country.id} value={country.id}>
+              {country.name}
+            </option>
+          ))}
+        </select>
       </div>
-            {/* Constituencies Section with Search */}
+
+      {/* Constituencies Grid */}
       {constituencies.length > 0 && (
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">Select Your Constituency</h2>
-          
-          <SearchableSelect
-            options={constituencies}
-            value={parseInt(constituencyId) || null}
-            onChange={(selectedConstituencyId) => {
-              // Use navigate instead of window.location
-              navigate(`/constituency/${selectedConstituencyId}`);
-            }}
-            placeholder="Search or select a constituency..."
-            label="Constituency"
-          />
-
-          {/* Quick links for popular constituencies */}
-          <div className="mt-4 pt-4 border-t">
-            <p className="text-sm text-gray-500 mb-2">Popular constituencies:</p>
-            <div className="flex flex-wrap gap-2">
-              {constituencies.slice(0, 5).map((constituency) => (
-                <button
-                  key={constituency.id}
-                  onClick={() => navigate(`/constituency/${constituency.id}`)}
-                  className="text-sm bg-gray-100 hover:bg-blue-100 px-3 py-1 rounded-full transition"
-                >
-                  {constituency.name}
-                </button>
-              ))}
-            </div>
+          <h2 className="text-xl font-bold mb-4">Your Constituency</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {constituencies.map((constituency) => (
+              <Link
+                key={constituency.id}
+                to={`/constituency/${constituency.id}`}
+                className={`block p-4 border rounded-lg hover:shadow-lg transition ${
+                  parseInt(constituencyId) === constituency.id
+                    ? 'bg-blue-50 border-blue-500'
+                    : 'hover:bg-gray-50'
+                }`}
+              >
+                <h3 className="font-semibold text-lg">{constituency.name}</h3>
+              </Link>
+            ))}
           </div>
         </div>
       )}
+
       {/* Issues List */}
       {constituencyId && (
         <div className="bg-white rounded-lg shadow-md p-6">
