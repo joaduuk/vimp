@@ -1,8 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware  # Add this import
 from sqlalchemy.orm import Session
 from .database import get_db, engine, Base
 from . import models, schemas, auth
 from datetime import timedelta
+from typing import Optional
 
 # Create tables (if they don't exist)
 Base.metadata.create_all(bind=engine)
@@ -28,14 +30,22 @@ tags_metadata = [
 ]
 
 app = FastAPI(
-    title="VIMP API", 
-    description="Virtual MP Platform",
+    title="VirMP API", 
+    description="Your Virtual Representative (MP) Platform",
     openapi_tags=tags_metadata
+)
+# Add CORS middleware - allows frontend to connect
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Vite's default port
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 @app.get("/", tags=["Root"])
 def root():
-    return {"message": "Welcome to VIMP API", "status": "running"}
+    return {"message": "Welcome to VirMP API", "status": "running"}
 
 # ============ AUTH ENDPOINTS ============
 
@@ -349,3 +359,20 @@ def get_user_vote(
         return {"has_voted": True, "vote_type": vote.vote_type}
     else:
         return {"has_voted": False, "vote_type": None}
+    
+# ============ COUNTRIES & CONSTITUENCIES ENDPOINTS ============
+
+@app.get("/api/countries", tags=["Countries"])
+def get_countries(db: Session = Depends(get_db)):
+    """Get all countries"""
+    countries = db.query(models.Country).all()
+    return countries
+
+@app.get("/api/constituencies", tags=["Constituencies"])
+def get_constituencies(country_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Get constituencies, optionally filtered by country"""
+    query = db.query(models.Constituency)
+    if country_id:
+        query = query.filter(models.Constituency.country_id == country_id)
+    constituencies = query.all()
+    return constituencies
