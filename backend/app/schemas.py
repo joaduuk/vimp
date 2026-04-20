@@ -64,7 +64,7 @@ class CommentResponse(BaseModel):
 # Vote schemas
 class VoteCreate(BaseModel):
     vote_type: int  # 1 = For, 0 = Neutral, -1 = Against
-    issue_id: int  # ADD THIS LINE - was missing
+    issue_id: int
 
 # Optional: Add a VoteResponse schema if needed
 class VoteResponse(BaseModel):
@@ -75,3 +75,57 @@ class VoteResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+# ============ ELECTION SCHEMAS ============
+
+class ElectionCreate(BaseModel):
+    constituency_id: int
+    title: str
+    description: Optional[str] = None
+    start_date: datetime  # This is now the voting start date (moderator picks this)
+    
+class ElectionUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    status: Optional[str] = None
+
+class ElectionResponse(BaseModel):
+    id: int
+    constituency_id: int
+    title: str
+    description: Optional[str] = None
+    start_date: datetime
+    end_date: datetime
+    status: str
+    created_at: datetime
+    constituency: Optional[dict] = None
+    candidates: Optional[list] = None
+    
+    class Config:
+        from_attributes = True
+
+class CandidateCreate(BaseModel):
+    manifesto: Optional[str] = None
+
+class CandidateResponse(BaseModel):
+    id: int
+    user_id: int
+    election_id: int
+    manifesto: Optional[str] = None
+    status: str
+    vote_count: int
+    user: Optional[UserResponse] = None  # FIXED: removed "schemas." - just UserResponse
+    
+    class Config:
+        from_attributes = True
+
+class ElectionVoteCreate(BaseModel):
+    candidate_id: int
+
+class ElectionResultResponse(BaseModel):
+    election_id: int
+    total_votes: int
+    winner: Optional[CandidateResponse] = None
+    candidates: list

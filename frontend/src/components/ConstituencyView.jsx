@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { getCountries, getConstituencies, getIssues, deleteIssue, getCurrentUser } from '../services/api';
-import SearchableSelect from './SearchableSelect';
 import { Link, useParams, useNavigate } from 'react-router-dom';
+import { getCountries, getConstituencies, getIssues, deleteIssue, getCurrentUser, getPopularConstituencies, getElections } from '../services/api';
+import SearchableSelect from './SearchableSelect';
+import ElectionCard from './ElectionCard';
 
 function ConstituencyView() {
   const { constituencyId } = useParams();
-  const navigate = useNavigate(); // Add this line
+  const navigate = useNavigate();
   const [countries, setCountries] = useState([]);
   const [constituencies, setConstituencies] = useState([]);
   const [selectedCountry, setSelectedCountry] = useState('');
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [popularConstituencies, setPopularConstituencies] = useState([]);
+  const [elections, setElections] = useState([]);
   const currentUser = getCurrentUser();
 
   // Load countries on mount
@@ -32,6 +35,18 @@ function ConstituencyView() {
     }
   }, [constituencyId]);
 
+  // Load popular constituencies when country changes
+  useEffect(() => {
+    loadPopularConstituencies();
+  }, [selectedCountry]);
+
+  // Load elections when constituencyId changes
+  useEffect(() => {
+    if (constituencyId) {
+      loadElections();
+    }
+  }, [constituencyId]);
+
   const loadCountries = async () => {
     try {
       const data = await getCountries();
@@ -41,12 +56,31 @@ function ConstituencyView() {
     }
   };
 
+  const loadElections = async () => {
+    if (!constituencyId) return;
+    try {
+      const data = await getElections(constituencyId);
+      setElections(data);
+    } catch (err) {
+      console.error('Failed to load elections:', err);
+    }
+  };
+
   const loadConstituencies = async (countryId) => {
     try {
       const data = await getConstituencies(countryId);
       setConstituencies(data);
     } catch (err) {
       console.error('Failed to load constituencies:', err);
+    }
+  };
+
+  const loadPopularConstituencies = async () => {
+    try {
+      const data = await getPopularConstituencies();
+      setPopularConstituencies(data);
+    } catch (err) {
+      console.error('Failed to load popular constituencies:', err);
     }
   };
 
@@ -73,9 +107,13 @@ function ConstituencyView() {
     }
   };
 
+  const handleConstituencySelect = (constituencyId) => {
+    navigate(`/constituency/${constituencyId}`);
+  };
+
   return (
     <div>
-             {/* Country Selector with Search */}
+      {/* Country Selector with Search */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <h2 className="text-xl font-bold mb-4">Select Your Country</h2>
         <SearchableSelect
@@ -84,14 +122,14 @@ function ConstituencyView() {
           onChange={(countryId) => {
             setSelectedCountry(countryId);
             setConstituencies([]);
-            // Navigate to home (clear constituency selection)
             navigate('/');
           }}
           placeholder="Search or select a country..."
           label="Country"
         />
       </div>
-            {/* Constituencies Section with Search */}
+
+      {/* Constituencies Section with Search */}
       {constituencies.length > 0 && (
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-xl font-bold mb-4">Select Your Constituency</h2>
@@ -100,30 +138,67 @@ function ConstituencyView() {
             options={constituencies}
             value={parseInt(constituencyId) || null}
             onChange={(selectedConstituencyId) => {
-              // Use navigate instead of window.location
               navigate(`/constituency/${selectedConstituencyId}`);
             }}
             placeholder="Search or select a constituency..."
             label="Constituency"
           />
 
-          {/* Quick links for popular constituencies */}
-          <div className="mt-4 pt-4 border-t">
-            <p className="text-sm text-gray-500 mb-2">Popular constituencies:</p>
-            <div className="flex flex-wrap gap-2">
-              {constituencies.slice(0, 5).map((constituency) => (
-                <button
-                  key={constituency.id}
-                  onClick={() => navigate(`/constituency/${constituency.id}`)}
-                  className="text-sm bg-gray-100 hover:bg-blue-100 px-3 py-1 rounded-full transition"
-                >
-                  {constituency.name}
-                </button>
-              ))}
+          {/* Most Active Constituencies */}
+          {popularConstituencies.length > 0 && (
+            <div className="mt-4 pt-4 border-t">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-semibold text-gray-700">🔥 Most Active</span>
+                <span className="text-xs text-gray-400">(by discussions & votes)</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {popularConstituencies.map((constituency) => (
+                  <button
+                    key={constituency.id}
+                    onClick={() => handleConstituencySelect(constituency.id)}
+                    className="text-sm bg-gradient-to-r from-orange-50 to-yellow-50 hover:from-orange-100 hover:to-yellow-100 border border-orange-200 px-3 py-1 rounded-full transition flex items-center gap-1"
+                  >
+                    🔥 {constituency.name}
+                    <span className="text-xs text-gray-500">
+                      ({constituency.comment_count} 💬)
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
+
+            {/* Elections Section - Separate from Issues */}
+      {constituencyId && (
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold">🗳️ Elections & Virtual MP</h2>
+            {currentUser?.role === 'moderator' && (
+              <Link
+                to={`/create-election/${constituencyId}`}
+                className="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 text-sm font-semibold"
+              >
+                + Create New Election
+              </Link>
+            )}
+          </div>
+          
+          {elections.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">
+              No elections yet. {currentUser?.role === 'moderator' && 'Click the button above to create one!'}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {elections.map((election) => (
+                <ElectionCard key={election.id} election={election} constituencyId={constituencyId} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Issues List */}
       {constituencyId && (
         <div className="bg-white rounded-lg shadow-md p-6">

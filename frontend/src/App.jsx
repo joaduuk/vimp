@@ -6,6 +6,10 @@ import IssueDetail from './components/IssueDetail';
 import CreateIssue from './components/CreateIssue';
 import Login from './components/Login';
 import Register from './components/Register';
+import ElectionVoting from './components/ElectionVoting';
+import ElectionResults from './components/ElectionResults';
+import CandidateRegistration from './components/CandidateRegistration';
+import CreateElection from './components/CreateElection';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -63,8 +67,18 @@ function App() {
         {/* Main Content */}
         <div className="max-w-7xl mx-auto px-4 py-8">
           <Routes>
+            {/* Auth Routes */}
             <Route path="/login" element={!user ? <Login onLogin={setUser} /> : <Navigate to="/" />} />
             <Route path="/register" element={!user ? <Register onRegister={setUser} /> : <Navigate to="/" />} />
+            
+            {/* Election Routes - Place these BEFORE dynamic routes */}
+            <Route path="/create-election/:constituencyId" element={user?.role === 'moderator' ? <CreateElection /> : <Navigate to="/" />} />
+            <Route path="/create-election" element={user?.role === 'moderator' ? <CreateElection /> : <Navigate to="/" />} />
+            <Route path="/election/:electionId/vote" element={user ? <ElectionVoting /> : <Navigate to="/login" />} />
+            <Route path="/election/:electionId/results" element={user ? <ElectionResults /> : <Navigate to="/login" />} />
+            <Route path="/election/:electionId/register" element={user ? <CandidateRegistration /> : <Navigate to="/login" />} />
+            
+            {/* Main App Routes */}
             <Route path="/" element={user ? <ConstituencyView /> : <Navigate to="/login" />} />
             <Route path="/constituency/:constituencyId" element={user ? <ConstituencyView /> : <Navigate to="/login" />} />
             <Route path="/issue/:issueId" element={user ? <IssueDetail /> : <Navigate to="/login" />} />

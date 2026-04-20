@@ -3,9 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware  # Add this import
 from sqlalchemy.orm import Session
 from .database import get_db, engine, Base
 from . import models, schemas, auth
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
-
 
 # Create tables (if they don't exist)
 Base.metadata.create_all(bind=engine)
@@ -422,73 +421,33 @@ def get_elections(
     db: Session = Depends(get_db)
 ):
     """Get elections, optionally filtered by constituency and/or status"""
-    from datetime import datetime, timedelta
-    
-    now = datetime.utcnow()
-    
-    # Build query
     query = db.query(models.Election)
     if constituency_id:
         query = query.filter(models.Election.constituency_id == constituency_id)
-    
-    elections = query.all()
-    
-    # Process each election and auto-update status based on dates
-    result = []
-    for election in elections:
-        if election.start_date and election.end_date:
-            registration_start = election.start_date
-            voting_start = election.start_date + timedelta(days=7)
-            voting_end = election.end_date
-            
-            # Auto-update status based on current date
-            if now < registration_start:
-                new_status = "upcoming"
-            elif registration_start <= now < voting_start:
-                new_status = "register"
-            elif voting_start <= now <= voting_end:
-                new_status = "active"
-            else:
-                new_status = "ended"
-            
-            # Update the database if status changed
-            if election.status != new_status:
-                election.status = new_status
-                db.add(election)
-        else:
-            # If dates are missing, keep existing status
-            new_status = election.status
-        
-        result.append({
-            "id": election.id,
-            "title": election.title,
-            "description": election.description,
-            "status": new_status,
-            "start_date": election.start_date.isoformat() if election.start_date else None,
-            "end_date": election.end_date.isoformat() if election.end_date else None,
-            "constituency_id": election.constituency_id,
-            "created_at": election.created_at.isoformat() if election.created_at else None,
-        })
-    
-    db.commit()
-    
-    # Apply status filter if provided
     if status:
-        result = [e for e in result if e['status'] == status]
+        query = query.filter(models.Election.status == status)
     
-    return result
+    elections = query.order_by(models.Election.created_at.desc()).all()
+    return elections
+
 @app.get("/api/elections/{election_id}", tags=["Elections"])
 def get_election_detail(election_id: int, db: Session = Depends(get_db)):
-    """Get detailed election info including approved candidates only"""
+    """Get detailed election info including candidates"""
     election = db.query(models.Election).filter(models.Election.id == election_id).first()
     if not election:
         raise HTTPException(status_code=404, detail="Election not found")
     
-    # Get ONLY approved candidates
+    # Get candidates with user info
     candidates = db.query(models.Candidate).filter(
         models.Candidate.election_id == election_id,
         models.Candidate.status == "approved"
     ).all()
+    
+    # Get vote counts for each candidate
+    for candidate in candidates:
+        candidate.vote_count = db.query(models.ElectionVote).filter(
+            models.ElectionVote.candidate_id == candidate.id
+        ).count()
     
     return {
         "id": election.id,
@@ -507,9 +466,7 @@ def create_election(
     current_user: models.User = Depends(auth.get_current_moderator),
     db: Session = Depends(get_db)
 ):
-    """Create a new election - dates are auto-calculated"""
-    from datetime import datetime, timedelta
-    
+    """Create a new election (moderator only)"""
     # Verify constituency exists
     constituency = db.query(models.Constituency).filter(
         models.Constituency.id == election_data.constituency_id
@@ -525,42 +482,13 @@ def create_election(
     if active_election:
         raise HTTPException(status_code=400, detail="Constituency already has an active or upcoming election")
     
-    # Get the voting start date from the request
-    voting_start_date = election_data.start_date
-    
-    # If it's a string, parse it
-    if isinstance(voting_start_date, str):
-        voting_start_date = datetime.fromisoformat(voting_start_date.replace('Z', '+00:00'))
-    
-    # Remove timezone info
-    if hasattr(voting_start_date, 'tzinfo') and voting_start_date.tzinfo is not None:
-        voting_start_date = voting_start_date.replace(tzinfo=None)
-    
-    # Calculate dates
-    registration_start = voting_start_date - timedelta(days=7)  # Registration opens 7 days before voting
-    registration_end = voting_start_date  # Registration closes when voting starts
-    voting_end = voting_start_date + timedelta(days=29)  # Voting lasts 30 days
-    
-    # Get current UTC time
-    now = datetime.utcnow()
-    
-    # Determine status based on current date
-    if now < registration_start:
-        status = "upcoming"  # Registration not open yet
-    elif registration_start <= now < voting_start_date:
-        status = "register"  # Registration period (special status for candidates to register)
-    elif voting_start_date <= now <= voting_end:
-        status = "active"  # Voting period
-    else:
-        status = "ended"  # Election ended
-    
     new_election = models.Election(
         constituency_id=election_data.constituency_id,
         title=election_data.title,
         description=election_data.description,
-        start_date=registration_start,
-        end_date=voting_end,
-        status=status,
+        start_date=election_data.start_date,
+        end_date=election_data.end_date,
+        status="upcoming",
         created_by=current_user.id
     )
     
@@ -568,19 +496,8 @@ def create_election(
     db.commit()
     db.refresh(new_election)
     
-    return {
-        "id": new_election.id,
-        "title": new_election.title,
-        "description": new_election.description,
-        "status": new_election.status,
-        "timeline": {
-            "registration_opens": registration_start.strftime('%Y-%m-%d'),
-            "registration_ends": registration_end.strftime('%Y-%m-%d'),
-            "voting_starts": voting_start_date.strftime('%Y-%m-%d'),
-            "voting_ends": voting_end.strftime('%Y-%m-%d')
-        },
-        "message": f"Election created! Current status: {status}"
-    }
+    return new_election
+
 @app.post("/api/elections/{election_id}/candidate", tags=["Elections"])
 def register_as_candidate(
     election_id: int,
@@ -589,33 +506,13 @@ def register_as_candidate(
     db: Session = Depends(get_db)
 ):
     """Register as a candidate for an election"""
-    from datetime import datetime
-    
-    # Verify election exists
+    # Verify election exists and is upcoming
     election = db.query(models.Election).filter(models.Election.id == election_id).first()
     if not election:
         raise HTTPException(status_code=404, detail="Election not found")
     
-    # Check if election is in registration phase (status = 'register')
-    # Also check dates as fallback
-    now = datetime.utcnow()
-    registration_start = election.start_date
-    voting_start = election.start_date + timedelta(days=7) if election.start_date else None
-    
-    # Use status as primary check
-    if election.status == 'ended':
-        raise HTTPException(status_code=400, detail="Election has ended")
-    
-    if election.status == 'active':
-        raise HTTPException(status_code=400, detail="Voting has already started - registration closed")
-    
-    # If status is 'upcoming' or 'register', allow registration
-    if election.status not in ['upcoming', 'register']:
-        # Fallback to date check
-        if now >= voting_start:
-            raise HTTPException(status_code=400, detail="Registration period has ended - voting has started")
-        if now < registration_start:
-            raise HTTPException(status_code=400, detail="Registration has not opened yet")
+    if election.status != "upcoming":
+        raise HTTPException(status_code=400, detail="Election is not open for registration")
     
     # Check if user is already a candidate
     existing = db.query(models.Candidate).filter(
@@ -637,10 +534,7 @@ def register_as_candidate(
     db.commit()
     db.refresh(candidate)
     
-    return {
-        "message": "Successfully registered as candidate. Waiting for moderator approval.",
-        "candidate": candidate
-    }
+    return candidate
 
 @app.post("/api/elections/{election_id}/vote", tags=["Elections"])
 def cast_election_vote(
@@ -726,47 +620,3 @@ def get_election_results(election_id: int, db: Session = Depends(get_db)):
         "winner": winner,
         "candidates": results
     }
-    
-@app.get("/api/elections/{election_id}/candidates/all", tags=["Elections"])
-def get_all_candidates(
-    election_id: int,
-    current_user: models.User = Depends(auth.get_current_moderator),
-    db: Session = Depends(get_db)
-):
-    """Get all candidates including pending (moderator only)"""
-    candidates = db.query(models.Candidate).filter(
-        models.Candidate.election_id == election_id
-    ).all()
-    return candidates
-
-@app.put("/api/candidates/{candidate_id}/approve", tags=["Elections"])
-def approve_candidate(
-    candidate_id: int,
-    current_user: models.User = Depends(auth.get_current_moderator),
-    db: Session = Depends(get_db)
-):
-    """Approve a candidate (moderator only)"""
-    candidate = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-    
-    candidate.status = "approved"
-    db.commit()
-    
-    return {"message": "Candidate approved successfully"}
-
-@app.put("/api/candidates/{candidate_id}/reject", tags=["Elections"])
-def reject_candidate(
-    candidate_id: int,
-    current_user: models.User = Depends(auth.get_current_moderator),
-    db: Session = Depends(get_db)
-):
-    """Reject a candidate (moderator only)"""
-    candidate = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-    
-    candidate.status = "rejected"
-    db.commit()
-    
-    return {"message": "Candidate rejected successfully"}

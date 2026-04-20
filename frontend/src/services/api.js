@@ -111,4 +111,46 @@ export const getUserVote = async (issueId) => {
   return response.data;
 };
 
+// Popular Constituencies API
+export const getPopularConstituencies = async () => {
+  const response = await api.get('/popular-constituencies');
+  return response.data;
+};
+
+// ============ ELECTION API ============
+
+export const getElections = async (constituencyId = null, status = null) => {
+  let url = '/elections';
+  const params = new URLSearchParams();
+  if (constituencyId) params.append('constituency_id', constituencyId);
+  if (status) params.append('status', status);
+  if (params.toString()) url += `?${params.toString()}`;
+  const response = await api.get(url);
+  return response.data;
+};
+
+export const getElectionDetail = async (electionId) => {
+  const response = await api.get(`/elections/${electionId}`);
+  return response.data;
+};
+
+export const createElection = async (electionData) => {
+  const response = await api.post('/elections', electionData);
+  return response.data;
+};
+
+export const registerAsCandidate = async (electionId, manifesto) => {
+  const response = await api.post(`/elections/${electionId}/candidate`, { manifesto });
+  return response.data;
+};
+
+export const castElectionVote = async (electionId, candidateId) => {
+  const response = await api.post(`/elections/${electionId}/vote`, { candidate_id: candidateId });
+  return response.data;
+};
+
+export const getElectionResults = async (electionId) => {
+  const response = await api.get(`/elections/${electionId}/results`);
+  return response.data;
+};
 export default api;
