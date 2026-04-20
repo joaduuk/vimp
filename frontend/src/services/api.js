@@ -153,4 +153,21 @@ export const getElectionResults = async (electionId) => {
   const response = await api.get(`/elections/${electionId}/results`);
   return response.data;
 };
+
+// ============ MODERATOR API ============
+
+export const getPendingCandidates = async () => {
+  const response = await api.get('/moderator/pending-candidates');
+  return response.data;
+};
+
+export const approveCandidate = async (candidateId) => {
+  const response = await api.put(`/moderator/candidates/${candidateId}/approve`);
+  return response.data;
+};
+
+export const rejectCandidate = async (candidateId) => {
+  const response = await api.put(`/moderator/candidates/${candidateId}/reject`);
+  return response.data;
+};
 export default api;

@@ -770,3 +770,77 @@ def reject_candidate(
     db.commit()
     
     return {"message": "Candidate rejected successfully"}
+
+@app.get("/api/moderator/pending-candidates", tags=["Moderator"])
+def get_pending_candidates(
+    current_user: models.User = Depends(auth.get_current_moderator),
+    db: Session = Depends(get_db)
+):
+    """Get all pending candidates across constituencies the moderator manages"""
+    # If moderator manages specific constituencies, filter by that
+    if current_user.moderates_constituency_id:
+        # Get elections in that constituency
+        elections = db.query(models.Election).filter(
+            models.Election.constituency_id == current_user.moderates_constituency_id
+        ).all()
+        election_ids = [e.id for e in elections]
+        
+        candidates = db.query(models.Candidate).filter(
+            models.Candidate.election_id.in_(election_ids),
+            models.Candidate.status == "pending"
+        ).all()
+    else:
+        # Super moderator - see all pending candidates
+        candidates = db.query(models.Candidate).filter(
+            models.Candidate.status == "pending"
+        ).all()
+    
+    # Enrich with election and user info
+    result = []
+    for candidate in candidates:
+        result.append({
+            "id": candidate.id,
+            "user_id": candidate.user_id,
+            "username": candidate.user.username if candidate.user else "Unknown",
+            "email": candidate.user.email if candidate.user else "Unknown",
+            "manifesto": candidate.manifesto,
+            "status": candidate.status,
+            "created_at": candidate.created_at,
+            "election_id": candidate.election_id,
+            "election_title": candidate.election.title if candidate.election else "Unknown",
+            "constituency_name": candidate.election.constituency.name if candidate.election and candidate.election.constituency else "Unknown"
+        })
+    
+    return result
+
+@app.put("/api/moderator/candidates/{candidate_id}/approve", tags=["Moderator"])
+def approve_candidate(
+    candidate_id: int,
+    current_user: models.User = Depends(auth.get_current_moderator),
+    db: Session = Depends(get_db)
+):
+    """Approve a candidate (moderator only)"""
+    candidate = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    candidate.status = "approved"
+    db.commit()
+    
+    return {"message": f"Candidate {candidate.user.username} approved successfully"}
+
+@app.put("/api/moderator/candidates/{candidate_id}/reject", tags=["Moderator"])
+def reject_candidate(
+    candidate_id: int,
+    current_user: models.User = Depends(auth.get_current_moderator),
+    db: Session = Depends(get_db)
+):
+    """Reject a candidate (moderator only)"""
+    candidate = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    candidate.status = "rejected"
+    db.commit()
+    
+    return {"message": f"Candidate {candidate.user.username} rejected"}
