@@ -15,7 +15,24 @@ class Constituency(Base):
     name = Column(String, index=True)
     country_id = Column(Integer, ForeignKey("countries.id"))
     country = relationship("Country")
+    view_count = Column(Integer, default=0)  # Add this for popularity tracking
     elections = relationship("Election", back_populates="constituency")
+
+# NOTIFICATION CLASS - MUST BE BEFORE USER
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    title = Column(String)
+    message = Column(Text)
+    type = Column(String)  # 'info', 'success', 'warning', 'election', 'comment', 'vote'
+    link = Column(String, nullable=True)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    # Relationship will be added after User class
+    # Relationship
+    user = relationship("User", back_populates="notifications")
 
 class User(Base):
     __tablename__ = "users"
@@ -23,16 +40,24 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
-    # RBAC Field: "user" or "moderator"
-    role = Column(String, default="user")
-    # Which constituency they moderate (NULL if they are a regular user)
-    moderates_constituency_id = Column(Integer, ForeignKey("constituencies.id"), nullable=True)  # Added comma
+    role = Column(String, default="user")  # 'user', 'moderator', 'super_admin'
+    moderates_constituency_id = Column(Integer, ForeignKey("constituencies.id"), nullable=True)
+    constituency_id = Column(Integer, ForeignKey("constituencies.id"), nullable=True)
+    is_active = Column(Boolean, default=True)
+    
+    # Relationships
+    constituency = relationship("Constituency", foreign_keys=[constituency_id])
+    moderates_constituency = relationship("Constituency", foreign_keys=[moderates_constituency_id])
     issues = relationship("Issue", back_populates="author")
     comments = relationship("Comment", back_populates="author")
     votes = relationship("Vote", back_populates="user")
-    
     candidacies = relationship("Candidate", back_populates="user")
     election_votes = relationship("ElectionVote", back_populates="user")
+    notifications = relationship("Notification", back_populates="user")
+    
+
+# Add back_populates to Notification
+Notification.user = relationship("User", back_populates="notifications")
     
 class Issue(Base):
     __tablename__ = "issues"
@@ -62,10 +87,8 @@ class Vote(Base):
     vote_type = Column(Integer)
     user_id = Column(Integer, ForeignKey("users.id"))
     issue_id = Column(Integer, ForeignKey("issues.id"))
-    user = relationship("User", back_populates="votes")  # Added this relationship
-    issue = relationship("Issue")  # Optional: to get vote's issue
-
-# Add these new models after your existing Vote model
+    user = relationship("User", back_populates="votes")
+    issue = relationship("Issue")
 
 class Election(Base):
     __tablename__ = "elections"
@@ -75,9 +98,9 @@ class Election(Base):
     description = Column(Text, nullable=True)
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=False)
-    status = Column(String, default="upcoming")  # upcoming, active, ended, cancelled
+    status = Column(String, default="upcoming")  # upcoming, register, active, ended, cancelled
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    created_by = Column(Integer, ForeignKey("users.id"))  # moderator who created
+    created_by = Column(Integer, ForeignKey("users.id"))
     
     # Relationships
     constituency = relationship("Constituency", back_populates="elections")
@@ -89,7 +112,7 @@ class Candidate(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     election_id = Column(Integer, ForeignKey("elections.id"))
-    manifesto = Column(Text, nullable=True)  # What they stand for
+    manifesto = Column(Text, nullable=True)
     status = Column(String, default="pending")  # pending, approved, rejected, withdrawn
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     vote_count = Column(Integer, default=0)
@@ -111,6 +134,6 @@ class ElectionVote(Base):
     __table_args__ = (UniqueConstraint('user_id', 'election_id', name='unique_user_election_vote'),)
     
     # Relationships
-    user = relationship("User")
+    user = relationship("User", back_populates="election_votes")
     candidate = relationship("Candidate", back_populates="votes")
     election = relationship("Election")

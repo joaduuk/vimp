@@ -170,4 +170,66 @@ export const rejectCandidate = async (candidateId) => {
   const response = await api.put(`/moderator/candidates/${candidateId}/reject`);
   return response.data;
 };
+
+// ============ ADMIN API ============
+
+export const getAdminStats = async () => {
+  const response = await api.get('/admin/stats');
+  return response.data;
+};
+
+export const getAllUsers = async () => {
+  const response = await api.get('/admin/users');
+  return response.data;
+};
+
+export const updateUserRole = async (userId, role) => {
+  const response = await api.put(`/admin/users/${userId}/role?role=${role}`);
+  return response.data;
+};
+
+export const deleteUser = async (userId) => {
+  const response = await api.delete(`/admin/users/${userId}`);
+  return response.data;
+};
+
+// ============ USER PROFILE API ============
+
+export const getUserProfile = async () => {
+  const response = await api.get('/user/profile');
+  return response.data;
+};
+
+export const updateUserProfile = async (profileData) => {
+  const response = await api.put('/user/profile', profileData);
+  // Update localStorage with new user data
+  const currentUser = getCurrentUser();
+  if (currentUser) {
+    const updatedUser = { ...currentUser, ...response.data };
+    localStorage.setItem('user', JSON.stringify(updatedUser));
+  }
+  return response.data;
+};
+
+export const getEligibleConstituencies = async () => {
+  const response = await api.get('/user/eligible-constituencies');
+  return response.data;
+};
+
+// ============ NOTIFICATION API ============
+
+export const getNotifications = async (limit = 50) => {
+  const response = await api.get(`/notifications?limit=${limit}`);
+  return response.data;
+};
+
+export const markNotificationRead = async (notificationId) => {
+  const response = await api.put(`/notifications/${notificationId}/read`);
+  return response.data;
+};
+
+export const markAllRead = async () => {
+  const response = await api.put('/notifications/read-all');
+  return response.data;
+};
 export default api;

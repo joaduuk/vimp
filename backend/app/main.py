@@ -6,6 +6,11 @@ from . import models, schemas, auth
 from datetime import datetime, timedelta
 from typing import Optional
 
+import socketio
+from .socket_manager import manager
+
+
+
 
 # Create tables (if they don't exist)
 Base.metadata.create_all(bind=engine)
@@ -28,7 +33,36 @@ tags_metadata = [
         "name": "Voting",
         "description": "Cast votes (For/Neutral/Against) on issues and view results",
     },
+    {
+        "name": "Elections",
+        "description": "Create and manage elections for Virtual MP",
+    },
+    {
+        "name": "Countries",
+        "description": "Get countries and constituencies",
+    },
+    {
+        "name": "Constituencies",
+        "description": "Get constituencies and popularity metrics",
+    },
+    {
+        "name": "User Profile",
+        "description": "Manage user profile and constituency settings",
+    },
+    {
+        "name": "Notifications",
+        "description": "User notifications and alerts",
+    },
+    {
+        "name": "Admin",
+        "description": "Super admin management endpoints",
+    },
+    {
+        "name": "Moderator",
+        "description": "Moderator management endpoints",
+    },
 ]
+
 
 app = FastAPI(
     title="VirMP API", 
@@ -43,6 +77,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Create Socket.IO server
+sio = socketio.AsyncServer(cors_allowed_origins=['http://localhost:5173'])
+
+# Mount Socket.IO
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 @app.get("/", tags=["Root"])
 def root():
@@ -71,7 +110,8 @@ def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
         username=user_data.username,
         hashed_password=hashed_password,
         role="user",  # Default role
-        moderates_constituency_id=None  # Regular users don't moderate
+        moderates_constituency_id=None,  # Regular users don't moderate
+        constituency_id=None, # ADD THIS - initially no constituency
     )
     
     db.add(new_user)
@@ -132,6 +172,20 @@ def create_issue(
     db: Session = Depends(get_db)
 ):
     """Create a new issue/post in a constituency"""
+    # Verify user has a constituency selected
+    if not current_user.constituency_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please set your constituency in your profile before creating issues"
+        )
+    
+    # Verify user is creating issue in their own constituency
+    if current_user.constituency_id != issue_data.constituency_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only create issues in your own constituency"
+        )
+    
     # Verify constituency exists
     constituency = db.query(models.Constituency).filter(models.Constituency.id == issue_data.constituency_id).first()
     if not constituency:
@@ -151,6 +205,25 @@ def create_issue(
     db.add(new_issue)
     db.commit()
     db.refresh(new_issue)
+    
+    # Create notifications for other users in the same constituency (except the author)
+    other_users = db.query(models.User).filter(
+        models.User.constituency_id == issue_data.constituency_id,
+        models.User.id != current_user.id
+    ).all()
+    
+    for user in other_users:
+        notification = models.Notification(
+            user_id=user.id,
+            title="New Issue in Your Constituency",
+            message=f"{current_user.username} posted: {issue_data.title[:60]}...",
+            type="info",
+            link=f"/issue/{new_issue.id}",
+            is_read=False
+        )
+        db.add(notification)
+    
+    db.commit()
     
     return new_issue
 
@@ -217,12 +290,26 @@ def create_comment(
     db: Session = Depends(get_db)
 ):
     """Add a comment to an issue"""
+    # Verify user has a constituency selected
+    if not current_user.constituency_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please set your constituency in your profile before commenting"
+        )
+    
     # Verify issue exists
     issue = db.query(models.Issue).filter(models.Issue.id == comment_data.issue_id).first()
     if not issue:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Issue not found"
+        )
+    
+    # Verify user is commenting on issue in their constituency
+    if current_user.constituency_id != issue.constituency_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only comment on issues in your own constituency"
         )
     
     # Create the comment
@@ -236,8 +323,20 @@ def create_comment(
     db.commit()
     db.refresh(new_comment)
     
+    # Notify the issue author (if not the commenter)
+    if issue.user_id != current_user.id:
+        notification = models.Notification(
+            user_id=issue.user_id,
+            title="New Comment on Your Issue",
+            message=f"{current_user.username} commented on '{issue.title[:50]}...'",
+            type="comment",
+            link=f"/issue/{issue.id}",
+            is_read=False
+        )
+        db.add(notification)
+        db.commit()
+    
     return new_comment
-
 @app.get("/api/comments/{issue_id}", tags=["Comments"])
 def get_comments_by_issue(
     issue_id: int,
@@ -287,12 +386,26 @@ def cast_vote(
     db: Session = Depends(get_db)
 ):
     """Cast a vote on an issue (For/Neutral/Against)"""
+    # Verify user has a constituency selected
+    if not current_user.constituency_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please set your constituency in your profile before voting"
+        )
+    
     # Verify issue exists
     issue = db.query(models.Issue).filter(models.Issue.id == vote_data.issue_id).first()
     if not issue:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Issue not found"
+        )
+    
+    # Verify user is voting on issue in their constituency
+    if current_user.constituency_id != issue.constituency_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only vote on issues in your own constituency"
         )
     
     # Check if user already voted on this issue
@@ -317,6 +430,21 @@ def cast_vote(
         db.add(new_vote)
         db.commit()
         db.refresh(new_vote)
+        
+        # Notify issue author about the vote (optional)
+        if issue.user_id != current_user.id:
+            vote_text = "For" if vote_data.vote_type == 1 else "Against" if vote_data.vote_type == -1 else "Neutral"
+            notification = models.Notification(
+                user_id=issue.user_id,
+                title="New Vote on Your Issue",
+                message=f"{current_user.username} voted '{vote_text}' on '{issue.title[:50]}...'",
+                type="vote",
+                link=f"/issue/{issue.id}",
+                is_read=False
+            )
+            db.add(notification)
+            db.commit()
+        
         return {"message": "Vote cast successfully", "vote": new_vote}
 
 @app.get("/api/votes/{issue_id}", tags=["Voting"])
@@ -844,3 +972,218 @@ def reject_candidate(
     db.commit()
     
     return {"message": f"Candidate {candidate.user.username} rejected"}
+
+# ============ SUPER ADMIN ENDPOINTS ============
+
+def get_current_super_admin(current_user: models.User = Depends(auth.get_current_user)):
+    """Check if current user is super admin"""
+    if current_user.role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super admin privileges required"
+        )
+    return current_user
+
+@app.get("/api/admin/users", tags=["Admin"])
+def get_all_users(
+    current_user: models.User = Depends(get_current_super_admin),
+    db: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 100
+):
+    """Get all users (super admin only)"""
+    users = db.query(models.User).offset(skip).limit(limit).all()
+    return users
+
+@app.put("/api/admin/users/{user_id}/role", tags=["Admin"])
+def update_user_role(
+    user_id: int,
+    role: str,
+    current_user: models.User = Depends(get_current_super_admin),
+    db: Session = Depends(get_db)
+):
+    """Update a user's role (super admin only)"""
+    if role not in ["user", "moderator", "super_admin"]:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.role = role
+    db.commit()
+    
+    return {"message": f"User {user.username} role updated to {role}"}
+
+@app.delete("/api/admin/users/{user_id}", tags=["Admin"])
+def delete_user(
+    user_id: int,
+    current_user: models.User = Depends(get_current_super_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete a user (super admin only)"""
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    db.delete(user)
+    db.commit()
+    
+    return {"message": f"User {user.username} deleted"}
+
+@app.get("/api/admin/stats", tags=["Admin"])
+def get_platform_stats(
+    current_user: models.User = Depends(get_current_super_admin),
+    db: Session = Depends(get_db)
+):
+    """Get platform statistics (super admin only)"""
+    from sqlalchemy import func
+    
+    total_users = db.query(models.User).count()
+    total_issues = db.query(models.Issue).count()
+    total_comments = db.query(models.Comment).count()
+    total_votes = db.query(models.Vote).count()
+    total_elections = db.query(models.Election).count()
+    
+    # Users by role
+    users_by_role = db.query(
+        models.User.role, 
+        func.count(models.User.id)
+    ).group_by(models.User.role).all()
+    
+    # Recent activity (last 7 days)
+    from datetime import datetime, timedelta
+    week_ago = datetime.utcnow() - timedelta(days=7)
+    
+    recent_issues = db.query(models.Issue).filter(
+        models.Issue.created_at >= week_ago
+    ).count()
+    
+    recent_comments = db.query(models.Comment).filter(
+        models.Comment.created_at >= week_ago
+    ).count()
+    
+    return {
+        "total_users": total_users,
+        "total_issues": total_issues,
+        "total_comments": total_comments,
+        "total_votes": total_votes,
+        "total_elections": total_elections,
+        "users_by_role": dict(users_by_role),
+        "recent_activity": {
+            "issues": recent_issues,
+            "comments": recent_comments,
+            "period": "last_7_days"
+        }
+    }
+
+# ============ USER PROFILE ENDPOINTS ============
+
+@app.get("/api/user/profile", response_model=schemas.UserResponse, tags=["User Profile"])
+def get_user_profile(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(get_db)):
+    """Get current user's profile"""
+    # Get constituency name if exists
+    result = {
+        "id": current_user.id,
+        "email": current_user.email,
+        "username": current_user.username,
+        "role": current_user.role,
+        "moderates_constituency_id": current_user.moderates_constituency_id,
+        "constituency_id": current_user.constituency_id,
+        "constituency_name": current_user.constituency.name if current_user.constituency else None
+    }
+    return result
+
+@app.put("/api/user/profile", tags=["User Profile"])
+def update_user_profile(
+    profile_data: schemas.UserUpdate,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update user profile (username, constituency)"""
+    if profile_data.username:
+        # Check if username is taken
+        existing = db.query(models.User).filter(
+            models.User.username == profile_data.username,
+            models.User.id != current_user.id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Username already taken")
+        current_user.username = profile_data.username
+    
+    if profile_data.constituency_id:
+        # Verify constituency exists
+        constituency = db.query(models.Constituency).filter(
+            models.Constituency.id == profile_data.constituency_id
+        ).first()
+        if not constituency:
+            raise HTTPException(status_code=404, detail="Constituency not found")
+        current_user.constituency_id = profile_data.constituency_id
+    
+    db.commit()
+    db.refresh(current_user)
+    
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "username": current_user.username,
+        "role": current_user.role,
+        "constituency_id": current_user.constituency_id,
+        "constituency_name": current_user.constituency.name if current_user.constituency else None
+    }
+
+@app.get("/api/user/eligible-constituencies", tags=["User Profile"])
+def get_eligible_constituencies(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get constituencies the user can select (all for now, could be location-based)"""
+    constituencies = db.query(models.Constituency).all()
+    return [{"id": c.id, "name": c.name, "country": c.country.name} for c in constituencies]
+
+# ============ NOTIFICATION ENDPOINTS ============
+
+@app.get("/api/notifications", tags=["Notifications"])
+def get_notifications(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = 50,
+    skip: int = 0
+):
+    """Get user's notifications"""
+    notifications = db.query(models.Notification).filter(
+        models.Notification.user_id == current_user.id
+    ).order_by(models.Notification.created_at.desc()).offset(skip).limit(limit).all()
+    return notifications
+
+@app.put("/api/notifications/{notification_id}/read", tags=["Notifications"])
+def mark_notification_read(
+    notification_id: int,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark a notification as read"""
+    notification = db.query(models.Notification).filter(
+        models.Notification.id == notification_id,
+        models.Notification.user_id == current_user.id
+    ).first()
+    if notification:
+        notification.is_read = True
+        db.commit()
+    return {"success": True}
+
+@app.put("/api/notifications/read-all", tags=["Notifications"])
+def mark_all_notifications_read(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark all notifications as read"""
+    db.query(models.Notification).filter(
+        models.Notification.user_id == current_user.id,
+        models.Notification.is_read == False
+    ).update({"is_read": True})
+    db.commit()
+    return {"success": True}

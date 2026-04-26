@@ -18,9 +18,15 @@ class UserResponse(BaseModel):
     username: str
     role: str
     moderates_constituency_id: Optional[int] = None
+    constituency_id: Optional[int] = None  # ADD THIS
+    constituency_name: Optional[str] = None  # ADD THIS
     
     class Config:
         from_attributes = True
+
+class UserUpdate(BaseModel):  # ADD THIS NEW SCHEMA
+    username: Optional[str] = None
+    constituency_id: Optional[int] = None
 
 class Token(BaseModel):
     access_token: str
