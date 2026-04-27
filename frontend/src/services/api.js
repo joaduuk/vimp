@@ -219,17 +219,34 @@ export const getEligibleConstituencies = async () => {
 // ============ NOTIFICATION API ============
 
 export const getNotifications = async (limit = 50) => {
-  const response = await api.get(`/notifications?limit=${limit}`);
-  return response.data;
+  try {
+    const response = await api.get(`/notifications?limit=${limit}`);
+    // Ensure we always return an array
+    return Array.isArray(response.data) ? response.data : [];
+  } catch (error) {
+    console.error("Error fetching notifications:", error);
+    return [];
+  }
 };
 
 export const markNotificationRead = async (notificationId) => {
-  const response = await api.put(`/notifications/${notificationId}/read`);
-  return response.data;
+  try {
+    const response = await api.put(`/notifications/${notificationId}/read`);
+    return response.data;
+  } catch (error) {
+    console.error("Error marking notification as read:", error);
+    throw error;
+  }
 };
 
 export const markAllRead = async () => {
-  const response = await api.put('/notifications/read-all');
-  return response.data;
+  try {
+    const response = await api.put('/notifications/read-all');
+    return response.data;
+  } catch (error) {
+    console.error("Error marking all notifications as read:", error);
+    throw error;
+  }
 };
+
 export default api;
