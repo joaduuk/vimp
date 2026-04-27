@@ -84,78 +84,78 @@ export const getCurrentUser = () => {
 
 // Countries API
 export const getCountries = async () => {
-  const response = await api.get('/countries');
+  const response = await api.get('/api/countries');
   return response.data;
 };
 
 // Constituencies API  
 export const getConstituencies = async (countryId) => {
-  const url = countryId ? `/constituencies?country_id=${countryId}` : '/constituencies';
+  const url = countryId ? `/api/constituencies?country_id=${countryId}` : '/api/constituencies';
   const response = await api.get(url);
   return response.data;
 };
 
 // Issues API
 export const getIssues = async (constituencyId) => {
-  const response = await api.get(`/issues/${constituencyId}`);
+  const response = await api.get(`/api/issues/${constituencyId}`);
   return response.data;
 };
 
 export const getIssue = async (issueId) => {
-  const response = await api.get(`/issue/${issueId}`);
+  const response = await api.get(`/api/issue/${issueId}`);
   return response.data;
 };
 
 export const createIssue = async (title, content, constituencyId) => {
-  const response = await api.post('/issues', { title, content, constituency_id: constituencyId });
+  const response = await api.post('/api/issues', { title, content, constituency_id: constituencyId });
   return response.data;
 };
 
 export const deleteIssue = async (issueId) => {
-  await api.delete(`/issue/${issueId}`);
+  await api.delete(`/api/issue/${issueId}`);
 };
 
 // Comments API
 export const getComments = async (issueId) => {
-  const response = await api.get(`/comments/${issueId}`);
+  const response = await api.get(`/api/comments/${issueId}`);
   return response.data;
 };
 
 export const createComment = async (content, issueId) => {
-  const response = await api.post('/comments', { content, issue_id: issueId });
+  const response = await api.post('/api/comments', { content, issue_id: issueId });
   return response.data;
 };
 
 export const deleteComment = async (commentId) => {
-  await api.delete(`/comment/${commentId}`);
+  await api.delete(`/api/comment/${commentId}`);
 };
 
 // Voting API
 export const castVote = async (voteType, issueId) => {
-  const response = await api.post('/vote', { vote_type: voteType, issue_id: issueId });
+  const response = await api.post('/api/vote', { vote_type: voteType, issue_id: issueId });
   return response.data;
 };
 
 export const getVoteCounts = async (issueId) => {
-  const response = await api.get(`/votes/${issueId}`);
+  const response = await api.get(`/api/votes/${issueId}`);
   return response.data;
 };
 
 export const getUserVote = async (issueId) => {
-  const response = await api.get(`/user/vote/${issueId}`);
+  const response = await api.get(`/api/user/vote/${issueId}`);
   return response.data;
 };
 
 // Popular Constituencies API
 export const getPopularConstituencies = async () => {
-  const response = await api.get('/popular-constituencies');
+  const response = await api.get('/api/popular-constituencies');
   return response.data;
 };
 
 // ============ ELECTION API ============
 
 export const getElections = async (constituencyId = null, status = null) => {
-  let url = '/elections';
+  let url = '/api/elections';
   const params = new URLSearchParams();
   if (constituencyId) params.append('constituency_id', constituencyId);
   if (status) params.append('status', status);
@@ -165,78 +165,78 @@ export const getElections = async (constituencyId = null, status = null) => {
 };
 
 export const getElectionDetail = async (electionId) => {
-  const response = await api.get(`/elections/${electionId}`);
+  const response = await api.get(`/api/elections/${electionId}`);
   return response.data;
 };
 
 export const createElection = async (electionData) => {
-  const response = await api.post('/elections', electionData);
+  const response = await api.post('/api/elections', electionData);
   return response.data;
 };
 
 export const registerAsCandidate = async (electionId, manifesto) => {
-  const response = await api.post(`/elections/${electionId}/candidate`, { manifesto });
+  const response = await api.post(`/api/elections/${electionId}/candidate`, { manifesto });
   return response.data;
 };
 
 export const castElectionVote = async (electionId, candidateId) => {
-  const response = await api.post(`/elections/${electionId}/vote`, { candidate_id: candidateId });
+  const response = await api.post(`/api/elections/${electionId}/vote`, { candidate_id: candidateId });
   return response.data;
 };
 
 export const getElectionResults = async (electionId) => {
-  const response = await api.get(`/elections/${electionId}/results`);
+  const response = await api.get(`/api/elections/${electionId}/results`);
   return response.data;
 };
 
 // ============ MODERATOR API ============
 
 export const getPendingCandidates = async () => {
-  const response = await api.get('/moderator/pending-candidates');
+  const response = await api.get('/api/moderator/pending-candidates');
   return response.data;
 };
 
 export const approveCandidate = async (candidateId) => {
-  const response = await api.put(`/moderator/candidates/${candidateId}/approve`);
+  const response = await api.put(`/api/moderator/candidates/${candidateId}/approve`);
   return response.data;
 };
 
 export const rejectCandidate = async (candidateId) => {
-  const response = await api.put(`/moderator/candidates/${candidateId}/reject`);
+  const response = await api.put(`/api/moderator/candidates/${candidateId}/reject`);
   return response.data;
 };
 
 // ============ ADMIN API ============
 
 export const getAdminStats = async () => {
-  const response = await api.get('/admin/stats');
+  const response = await api.get('/api/admin/stats');
   return response.data;
 };
 
 export const getAllUsers = async () => {
-  const response = await api.get('/admin/users');
+  const response = await api.get('/api/admin/users');
   return response.data;
 };
 
 export const updateUserRole = async (userId, role) => {
-  const response = await api.put(`/admin/users/${userId}/role?role=${role}`);
+  const response = await api.put(`/api/admin/users/${userId}/role?role=${role}`);
   return response.data;
 };
 
 export const deleteUser = async (userId) => {
-  const response = await api.delete(`/admin/users/${userId}`);
+  const response = await api.delete(`/api/admin/users/${userId}`);
   return response.data;
 };
 
 // ============ USER PROFILE API ============
 
 export const getUserProfile = async () => {
-  const response = await api.get('/user/profile');
+  const response = await api.get('/api/user/profile');
   return response.data;
 };
 
 export const updateUserProfile = async (profileData) => {
-  const response = await api.put('/user/profile', profileData);
+  const response = await api.put('/api/user/profile', profileData);
   // Update localStorage with new user data
   const currentUser = getCurrentUser();
   if (currentUser) {
@@ -247,7 +247,7 @@ export const updateUserProfile = async (profileData) => {
 };
 
 export const getEligibleConstituencies = async () => {
-  const response = await api.get('/user/eligible-constituencies');
+  const response = await api.get('/api/user/eligible-constituencies');
   return response.data;
 };
 
@@ -255,7 +255,7 @@ export const getEligibleConstituencies = async () => {
 
 export const getNotifications = async (limit = 50) => {
   try {
-    const response = await api.get(`/notifications?limit=${limit}`);
+    const response = await api.get(`/api/notifications?limit=${limit}`);
     // Ensure we always return an array
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
@@ -266,7 +266,7 @@ export const getNotifications = async (limit = 50) => {
 
 export const markNotificationRead = async (notificationId) => {
   try {
-    const response = await api.put(`/notifications/${notificationId}/read`);
+    const response = await api.put(`/api/notifications/${notificationId}/read`);
     return response.data;
   } catch (error) {
     console.error("Error marking notification as read:", error);
@@ -276,7 +276,7 @@ export const markNotificationRead = async (notificationId) => {
 
 export const markAllRead = async () => {
   try {
-    const response = await api.put('/notifications/read-all');
+    const response = await api.put('/api/notifications/read-all');
     return response.data;
   } catch (error) {
     console.error("Error marking all notifications as read:", error);
