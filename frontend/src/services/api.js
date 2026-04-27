@@ -20,7 +20,7 @@ api.interceptors.request.use((config) => {
 
 // Auth API
 export const register = async (email, username, password) => {
-  const response = await api.post('/register', { email, username, password });
+  const response = await api.post('/api/register', { email, username, password });
   if (response.data.access_token) {
     localStorage.setItem('token', response.data.access_token);
     localStorage.setItem('user', JSON.stringify(response.data.user));
@@ -29,7 +29,7 @@ export const register = async (email, username, password) => {
 };
 
 export const login = async (email, password) => {
-  const response = await api.post('/login', { email, password });
+  const response = await api.post('/api/login', { email, password });
   if (response.data.access_token) {
     localStorage.setItem('token', response.data.access_token);
     localStorage.setItem('user', JSON.stringify(response.data.user));
