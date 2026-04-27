@@ -18,6 +18,41 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// ============ RESPONSE INTERCEPTOR - Ensures arrays for all endpoints ============
+api.interceptors.response.use((response) => {
+  // List of endpoints that should always return arrays
+  const arrayEndpoints = [
+    '/notifications',
+    '/countries', 
+    '/constituencies',
+    '/elections',
+    '/comments',
+    '/issues',
+    '/popular-constituencies',
+    '/user/eligible-constituencies',
+    '/admin/users',
+    '/moderator/pending-candidates',
+    '/votes',
+    '/user/vote'
+  ];
+  
+  // Check if this endpoint should return an array
+  const shouldBeArray = arrayEndpoints.some(endpoint => 
+    response.config.url?.includes(endpoint)
+  );
+  
+  // If it should be an array but isn't, convert it to an empty array or array with single item
+  if (shouldBeArray && !Array.isArray(response.data)) {
+    console.warn(`API ${response.config.url} returned non-array, converting to array`);
+    response.data = response.data === null || response.data === undefined ? [] : [response.data];
+  }
+  
+  return response;
+}, (error) => {
+  return Promise.reject(error);
+});
+// ============ END RESPONSE INTERCEPTOR ============
+
 // Auth API
 export const register = async (email, username, password) => {
   const response = await api.post('/api/register', { email, username, password });
