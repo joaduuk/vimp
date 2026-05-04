@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 const API_BASE_URL = 'http://69.62.124.214';
+//onst API_BASE_URL = 'http://127.0.0.1:8000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -54,8 +55,8 @@ api.interceptors.response.use((response) => {
 // ============ END RESPONSE INTERCEPTOR ============
 
 // Auth API
-export const register = async (email, username, password) => {
-  const response = await api.post('/api/register', { email, username, password });
+export const register = async (email, username, password, constituencyId) => {
+  const response = await api.post('/api/register', { email, username, password, constituency_id: constituencyId });
   if (response.data.access_token) {
     localStorage.setItem('token', response.data.access_token);
     localStorage.setItem('user', JSON.stringify(response.data.user));
@@ -88,6 +89,10 @@ export const getCountries = async () => {
   return response.data;
 };
 
+export const getPublicConstituencies = async () => {
+  const response = await api.get('/api/public/constituencies');
+  return response.data;
+};
 // Constituencies API  
 export const getConstituencies = async (countryId) => {
   const url = countryId ? `/api/constituencies?country_id=${countryId}` : '/api/constituencies';
