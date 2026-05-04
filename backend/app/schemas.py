@@ -7,6 +7,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     username: str
     password: str
+    constituency_id: Optional[int] = None  # ADD THIS
 
 class UserLogin(BaseModel):
     email: EmailStr

@@ -5,6 +5,7 @@ from .database import get_db, engine, Base
 from . import models, schemas, auth
 from datetime import datetime, timedelta
 from typing import Optional
+from .email import send_welcome_email
 
 import socketio
 from .socket_manager import manager
@@ -73,6 +74,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],  # Vite's default port
+    
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -90,7 +92,7 @@ def root():
 # ============ AUTH ENDPOINTS ============
 
 @app.post("/api/register", response_model=schemas.Token, tags=["Authentication"])
-def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
+async def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
     """Register a new user"""
     # Check if user exists
     existing_user = db.query(models.User).filter(
@@ -102,16 +104,29 @@ def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email or username already registered"
         )
-    
-    # Create new user (default role is "user")
+
+    # Validate constituency if provided
+    constituency_id = None
+    if user_data.constituency_id:
+        constituency = db.query(models.Constituency).filter(
+            models.Constituency.id == user_data.constituency_id
+        ).first()
+        if not constituency:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected constituency not found"
+            )
+        constituency_id = user_data.constituency_id
+
+    # Create new user
     hashed_password = auth.get_password_hash(user_data.password)
     new_user = models.User(
         email=user_data.email,
         username=user_data.username,
         hashed_password=hashed_password,
-        role="user",  # Default role
-        moderates_constituency_id=None,  # Regular users don't moderate
-        constituency_id=None, # ADD THIS - initially no constituency
+        role="user",
+        moderates_constituency_id=None,
+        constituency_id=constituency_id,
     )
     
     db.add(new_user)
@@ -120,13 +135,19 @@ def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
     
     # Create access token
     access_token = auth.create_access_token(data={"sub": str(new_user.id)})
+
+    # Send welcome email (don't block registration if email fails)
+    try:
+        await send_welcome_email(new_user.email, new_user.username)
+    except Exception as e:
+        print(f"Failed to send welcome email: {e}")
     
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "user": new_user
     }
-
+    
 @app.post("/api/login", response_model=schemas.Token, tags=["Authentication"])
 def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
     """Login with email and password"""
@@ -235,26 +256,62 @@ def get_issues_by_constituency(
     db: Session = Depends(get_db)
 ):
     """Get all issues for a specific constituency"""
-    issues = db.query(models.Issue).filter(
+    from sqlalchemy.orm import joinedload
+    issues = db.query(models.Issue).options(
+        joinedload(models.Issue.author)
+    ).filter(
         models.Issue.constituency_id == constituency_id
     ).order_by(models.Issue.created_at.desc()).offset(skip).limit(limit).all()
-    
-    return issues
 
+    return [
+        {
+            "id": i.id,
+            "title": i.title,
+            "content": i.content,
+            "created_at": i.created_at,
+            "user_id": i.user_id,
+            "constituency_id": i.constituency_id,
+            "author": {
+                "id": i.author.id,
+                "username": i.author.username,
+                "email": i.author.email,
+                "role": i.author.role,
+            } if i.author else None
+        }
+        for i in issues
+    ]
 @app.get("/api/issue/{issue_id}", tags=["Issues"])
 def get_issue_detail(
     issue_id: int,
     db: Session = Depends(get_db)
 ):
     """Get a single issue with details"""
-    issue = db.query(models.Issue).filter(models.Issue.id == issue_id).first()
+    from sqlalchemy.orm import joinedload
+    issue = db.query(models.Issue).options(
+        joinedload(models.Issue.author)
+    ).filter(models.Issue.id == issue_id).first()
+
     if not issue:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Issue not found"
         )
-    return issue
 
+    return {
+        "id": issue.id,
+        "title": issue.title,
+        "content": issue.content,
+        "created_at": issue.created_at,
+        "user_id": issue.user_id,
+        "constituency_id": issue.constituency_id,
+        "author": {
+            "id": issue.author.id,
+            "username": issue.author.username,
+            "email": issue.author.email,
+            "role": issue.author.role,
+        } if issue.author else None
+    }
+    
 @app.delete("/api/issue/{issue_id}", tags=["Issues"])
 def delete_issue(
     issue_id: int,
@@ -337,6 +394,7 @@ def create_comment(
         db.commit()
     
     return new_comment
+
 @app.get("/api/comments/{issue_id}", tags=["Comments"])
 def get_comments_by_issue(
     issue_id: int,
@@ -345,12 +403,30 @@ def get_comments_by_issue(
     db: Session = Depends(get_db)
 ):
     """Get all comments for a specific issue"""
-    comments = db.query(models.Comment).filter(
+    from sqlalchemy.orm import joinedload
+    comments = db.query(models.Comment).options(
+        joinedload(models.Comment.author)
+    ).filter(
         models.Comment.issue_id == issue_id
     ).order_by(models.Comment.created_at.asc()).offset(skip).limit(limit).all()
-    
-    return comments
 
+    return [
+        {
+            "id": c.id,
+            "content": c.content,
+            "created_at": c.created_at,
+            "user_id": c.user_id,
+            "issue_id": c.issue_id,
+            "author": {
+                "id": c.author.id,
+                "username": c.author.username,
+                "email": c.author.email,
+                "role": c.author.role,
+            } if c.author else None
+        }
+        for c in comments
+    ]
+    
 @app.delete("/api/comment/{comment_id}", tags=["Comments"])
 def delete_comment(
     comment_id: int,
@@ -1187,3 +1263,9 @@ def mark_all_notifications_read(
     ).update({"is_read": True})
     db.commit()
     return {"success": True}
+
+@app.get("/api/public/constituencies", tags=["Constituencies"])
+def get_public_constituencies(db: Session = Depends(get_db)):
+    """Get all constituencies publicly - used for registration"""
+    constituencies = db.query(models.Constituency).all()
+    return [{"id": c.id, "name": c.name, "country": c.country.name} for c in constituencies]
